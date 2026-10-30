@@ -202,17 +202,28 @@ async function resolveAsset(id){
  const task=(async()=>{const chunks=[];for(const part of meta.parts){if(activeSession!==sessionGeneration)throw Error('locked');chunks.push(await decrypt(await fetchPart(part),activeKey));}if(activeSession!==sessionGeneration)throw Error('locked');const url=URL.createObjectURL(new Blob(chunks,{type:meta.mime}));blobCache.set(id,url);if(blobCache.size>65){const oldest=blobCache.keys().next().value;if(oldest!==viewAsset&&oldest!==id){URL.revokeObjectURL(blobCache.get(oldest));blobCache.delete(oldest);}}return url;})();
  inflightMedia.set(id,task);try{return await task;}finally{inflightMedia.delete(id);}
 }
+// The worker stream needs the session the page posted to it; after the worker is replaced or evicted
+// that session is gone, so playback falls back to downloading the whole file in the page.
+async function playWithoutWorker(element,media,activeSession,message){
+ if(element.dataset.fallback)return notify(message);
+ element.dataset.fallback='1';
+ try{
+  const direct=await resolveAsset(media.asset);
+  if(activeSession!==sessionGeneration||!element.isConnected)return;
+  element.src=direct;element.load();element.play().catch(()=>{});
+ }catch(error){if(error.message!=='locked')notify(message);}
+}
 function mediaError(error){return error.message==='no-media'?'Вложения ещё не подключены. Текст переписки уже доступен.':error.message==='missing'?'Этот файл отсутствует в экспорте.':'Не удалось загрузить файл из облака. Попробуй ещё раз.';}
 async function loadInlineMedia(wrap,media,m){
  if(media.kind==='file')return openMedia(media,m);const activeSession=sessionGeneration,b=wrap.querySelector('button');b.disabled=true;
- try{const url=await streamingURL(media.asset);if(activeSession!==sessionGeneration||!wrap.isConnected)return;const audio=el('audio','audio-player');audio.controls=true;audio.preload='metadata';audio.src=url;audio.onerror=()=>notify('Не удалось воспроизвести запись. Проверь подключение к облаку.');wrap.append(audio);b.hidden=true;audio.play().catch(()=>{});}catch(e){if(e.message!=='locked')notify(mediaError(e));}finally{b.disabled=false;}
+ try{const url=await streamingURL(media.asset);if(activeSession!==sessionGeneration||!wrap.isConnected)return;const audio=el('audio','audio-player');audio.controls=true;audio.preload='metadata';audio.src=url;audio.onerror=()=>playWithoutWorker(audio,media,activeSession,'Не удалось воспроизвести запись. Проверь подключение к облаку.');wrap.append(audio);b.hidden=true;audio.play().catch(()=>{});}catch(e){if(e.message!=='locked')notify(mediaError(e));}finally{b.disabled=false;}
 }
 async function openMedia(media,m){
  $('#menu').hidden=true;$('#viewer').hidden=false;$('#viewer-label').textContent=displayDate(m.date,true);const content=$('#viewer-content');content.replaceChildren(el('span','loading-spinner'));viewAsset=media.asset;const activeSession=sessionGeneration;
  try{
   const assetMeta=archive.media[media.asset];if(!assetMeta)throw Error('missing');const url=await (assetMeta.mime.startsWith('video/')||assetMeta.mime.startsWith('audio/')?streamingURL(media.asset):resolveAsset(media.asset));if(activeSession!==sessionGeneration||$('#viewer').hidden||viewAsset!==media.asset)return;const meta=archive.media[media.asset];content.replaceChildren();
   if(meta.mime.startsWith('image/')){const image=el('img');image.src=url;image.alt=mediaLabel(media.kind);content.append(image);}
-  else if(meta.mime.startsWith('video/')){const video=el('video');video.controls=true;video.playsInline=true;video.src=url;video.autoplay=true;video.onerror=()=>notify('Не удалось воспроизвести видео. Проверь подключение к облаку.');content.append(video);}
+  else if(meta.mime.startsWith('video/')){const video=el('video');video.controls=true;video.playsInline=true;video.src=url;video.autoplay=true;video.onerror=()=>playWithoutWorker(video,media,activeSession,'Не удалось воспроизвести видео. Проверь подключение к облаку.');content.append(video);}
   else if(meta.mime.startsWith('audio/')){const audio=el('audio');audio.controls=true;audio.src=url;content.append(audio);audio.play().catch(()=>{});}
   else if(meta.name.endsWith('.tgs')){const bytes=await(await fetch(url)).arrayBuffer(),json=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).json();if(activeSession!==sessionGeneration||viewAsset!==media.asset||$('#viewer').hidden)return;const target=el('div');target.style.width='min(85vw,400px)';target.style.height='min(85vw,400px)';content.append(target);stickerAnimation=window.lottie.loadAnimation({container:target,renderer:'svg',loop:true,autoplay:true,animationData:json});}
   else{const wrap=el('div','empty-state');wrap.append(el('p','',meta.name),button('full-button','Скачать файл',()=>downloadAsset(media.asset)));content.append(wrap);}
