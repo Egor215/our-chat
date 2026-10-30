@@ -154,6 +154,16 @@ function createMedia(m){
 }
 const imageObserver=new IntersectionObserver(entries=>{for(const entry of entries){if(entry.isIntersecting){imageObserver.unobserve(entry.target);const image=entry.target,id=image.dataset.asset;resolveAsset(id).then(url=>{if(image.isConnected)image.src=url;}).catch(()=>{if(image.isConnected){image.removeAttribute('src');image.alt=mediaConfig?.provider==='none'?'Медиа ещё не подключены':'Нажми, чтобы открыть медиа';}});}}},{rootMargin:'250px'});
 function observeImage(image,id){image.dataset.asset=id;imageObserver.observe(image);}
+// Google answers a burst of requests with 403 rateLimitExceeded or 429, so a part is worth retrying.
+async function fetchPatiently(url,options){
+ for(let attempt=0;;attempt++){
+  try{return await fetchChecked(url,options);}
+  catch(error){
+   if(attempt>=2||!/^HTTP (403|429|5\d\d)$/.test(error.message))throw error;
+   await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+  }
+ }
+}
 // Google Drive has no addressable paths: each folder is listed once and its names are mapped to file ids.
 const driveListings=new Map();
 const driveIdPattern=/^[A-Za-z0-9_-]{10,200}$/;
@@ -162,7 +172,7 @@ async function driveList(parent,config){
  do{
   const query=new URLSearchParams({q:"'"+parent+"' in parents and trashed=false",key:config.apiKey,fields:'files(id,name),nextPageToken',pageSize:'1000'});
   if(token)query.set('pageToken',token);
-  const data=await(await fetchChecked('https://www.googleapis.com/drive/v3/files?'+query,{credentials:'omit'})).json();
+  const data=await(await fetchPatiently('https://www.googleapis.com/drive/v3/files?'+query,{credentials:'omit'})).json();
   for(const file of data.files||[])files.set(file.name,file.id);
   token=data.nextPageToken||'';
  }while(token);
@@ -193,7 +203,7 @@ async function fetchPart(path){
  else throw Error('unsupported-provider');
  if(!url||!/^https?:/.test(String(url)))throw Error('invalid-media-url');
  // A Google API key may be restricted by referrer, so that request keeps the origin.
- return (await fetchChecked(url,{credentials:'omit',referrerPolicy:config.provider==='gdrive'&&!config.proxyUrl?'strict-origin-when-cross-origin':'no-referrer'})).arrayBuffer();
+ return (await fetchPatiently(url,{credentials:'omit',referrerPolicy:config.provider==='gdrive'&&!config.proxyUrl?'strict-origin-when-cross-origin':'no-referrer'})).arrayBuffer();
 }
 const inflightMedia=new Map();
 async function resolveAsset(id){

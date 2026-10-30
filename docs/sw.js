@@ -1,4 +1,4 @@
-const CACHE='our-chat-shell-v4';
+const CACHE='our-chat-shell-v5';
 const SHELL=['./','./index.html','./style.css','./telegram-theme.css','./telegram-pattern.svg','./app.js','./search-worker.js','./lottie_light.min.js','./icon.svg','./apple-touch-icon.png','./manifest.webmanifest'];
 let session=null;
 const decryptedParts=new Map();
@@ -6,6 +6,14 @@ self.addEventListener('message',event=>{
  if(event.data?.type==='archive-session'&&session?.sessionId!==event.data.sessionId){session=event.data;decryptedParts.clear();}
  if(event.data?.type==='archive-lock'){session=null;decryptedParts.clear();driveListings.clear();}
 });
+async function fetchPatiently(url,options){
+ for(let attempt=0;;attempt++){
+  const response=await fetch(url,options);
+  if(response.ok)return response;
+  if(attempt>=2||![403,429,500,502,503,504].includes(response.status))throw Error('media');
+  await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+ }
+}
 const driveListings=new Map();
 const driveIdPattern=/^[A-Za-z0-9_-]{10,200}$/;
 async function driveList(parent,config){
@@ -13,8 +21,7 @@ async function driveList(parent,config){
  do{
   const query=new URLSearchParams({q:"'"+parent+"' in parents and trashed=false",key:config.apiKey,fields:'files(id,name),nextPageToken',pageSize:'1000'});
   if(token)query.set('pageToken',token);
-  const response=await fetch('https://www.googleapis.com/drive/v3/files?'+query,{credentials:'omit'});if(!response.ok)throw Error('media');
-  const data=await response.json();
+  const data=await(await fetchPatiently('https://www.googleapis.com/drive/v3/files?'+query,{credentials:'omit'})).json();
   for(const file of data.files||[])files.set(file.name,file.id);
   token=data.nextPageToken||'';
  }while(token);
@@ -43,7 +50,7 @@ async function mediaPart(path,active){
  }else if(config.provider==='http')url=new URL(path,config.baseUrl.endsWith('/')?config.baseUrl:config.baseUrl+'/');
  else throw Error('no-media');
  if(!url||!/^https?:/.test(String(url)))throw Error('media');
- const r=await fetch(url,{credentials:'omit',referrerPolicy:config.provider==='gdrive'&&!config.proxyUrl?'strict-origin-when-cross-origin':'no-referrer'});if(!r.ok)throw Error('media');const ciphertext=new Uint8Array(await r.arrayBuffer());const bytes=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:ciphertext.slice(0,12)},active.key,ciphertext.slice(12)));
+ const r=await fetchPatiently(url,{credentials:'omit',referrerPolicy:config.provider==='gdrive'&&!config.proxyUrl?'strict-origin-when-cross-origin':'no-referrer'});const ciphertext=new Uint8Array(await r.arrayBuffer());const bytes=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:ciphertext.slice(0,12)},active.key,ciphertext.slice(12)));
  if(session!==active)throw Error('locked');decryptedParts.set(path,bytes);if(decryptedParts.size>4)decryptedParts.delete(decryptedParts.keys().next().value);return bytes;
 }
 async function streamMedia(request,id){
