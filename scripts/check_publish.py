@@ -1,6 +1,6 @@
 """Fail closed before uploading any GitHub Pages artifact."""
 from pathlib import Path
-import json, subprocess
+import json, re, subprocess
 
 root=Path(__file__).resolve().parents[1]
 dist=root/'docs'
@@ -20,6 +20,19 @@ for path in paths:
         data=path.read_text('utf-8')
         assert 'BEGIN PRIVATE KEY' not in data,'Private key in artifact'
         assert not ('"password":' in data or '"password" :' in data),'Password in artifact'
+settings=dist/'media-config.json'
+if settings.exists():
+    media=json.loads(settings.read_text('utf-8'))
+    provider=media.get('provider')
+    assert provider in {'none','http','yandex','gdrive'},f'Unknown media provider: {provider}'
+    identifier=re.compile(r'[A-Za-z0-9_-]{10,200}')
+    if provider=='gdrive' and not media.get('proxyUrl'):
+        assert identifier.fullmatch(media.get('driveFolderId') or ''),'Drive folder id is missing or malformed'
+        assert identifier.fullmatch(media.get('apiKey') or ''),'Drive API key is missing or malformed'
+    if provider=='yandex' and not media.get('proxyUrl'):
+        assert (media.get('yandexPublicUrl') or '').startswith('https://'),'Yandex public link is missing'
+    if provider=='http':
+        assert (media.get('baseUrl') or '').startswith('https://'),'Media base URL must be HTTPS'
 private=root/'private/access.json'
 if private.exists():
     password=json.loads(private.read_text('utf-8'))['password'].encode()

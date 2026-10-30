@@ -21,6 +21,12 @@ def text(node):
     for br in clone.xpath('.//br'): br.tail = '\n' + (br.tail or '')
     return clone.text_content().strip()
 
+def author(node):
+    if node is None: return ''
+    clone = html.fromstring(html.tostring(node))
+    for span in clone.xpath('.//span[contains(concat(" ", normalize-space(@class), " "), " details ")]'): span.drop_tree()
+    return clone.text_content().strip().split('\n')[0].strip()
+
 def cls(node, name):
     return node.xpath('./*[contains(concat(" ", normalize-space(@class), " "), " '+name+' ")]')
 
@@ -102,22 +108,26 @@ def main():
             who=first(body,'from_name')
             if who is not None:
                 sender=1 if text(who).startswith('Deleted Account') else 0
-            content=first(body,'text')
+            # A forwarded message keeps its text and media one level deeper, in a block that repeats
+            # class "body"; the avatar standing next to that block carries class "forwarded" as well.
+            forwarded=next((n for n in cls(body,'forwarded') if 'body' in n.get('class','').split()),None)
+            holder=forwarded if forwarded is not None else body
+            content=first(holder,'text')
             record={'id':int(ident[7:]),'date':iso,'day':iso[:10],'sender':sender,'text':text(content),'html':safe_html(content)}
             if service:record.update(service=True,text=service)
-            reply=first(body,'reply_to')
+            reply=first(body,'reply_to') # A reply inside a forwarded block points into the original chat, not into ours.
             if reply is not None:
                 a=reply.xpath('.//a/@href')
                 if a:
                     r=re.search(r'message(-?\d+)',a[0])
                     if r:record['reply']=int(r.group(1))
-            forwarded=first(body,'forwarded')
             if forwarded is not None:
-                name=first(forwarded,'from_name')
-                record['forwarded']=text(name).split('\n')[0] if name is not None else 'Пересланное сообщение'
-                inner=first(forwarded,'text')
-                if inner is not None and content is None:record.update(text=text(inner),html=safe_html(inner))
-            wrap=first(body,'media_wrap')
+                name=author(first(forwarded,'from_name'))
+                # Telegram omits the author on a run of forwards from the same source.
+                if not name and 'joined' in m.get('class','').split() and messages and messages[-1].get('forwarded'):
+                    name=messages[-1]['forwarded']
+                record['forwarded']=name or 'Пересланное сообщение'
+            wrap=first(holder,'media_wrap')
             if wrap is not None:
                 links=wrap.xpath('.//a[@href]')
                 a=links[0] if links else (wrap[0] if len(wrap) else wrap)
@@ -163,7 +173,7 @@ def main():
     encrypted_json(datadir/'index.bin',archive)
     (dist/'archive.json').write_text(json.dumps({'version':1,'salt':auth['salt'],'iterations':ITERATIONS,'index':'data/index.bin'},indent=2),encoding='utf-8')
     config=dist/'media-config.json'
-    if not config.exists():config.write_text(json.dumps({'provider':'none','baseUrl':'','yandexPublicUrl':'','proxyUrl':''},indent=2),encoding='utf-8')
+    if not config.exists():config.write_text(json.dumps({'provider':'none','driveFolderId':'','apiKey':'','baseUrl':'','yandexPublicUrl':'','proxyUrl':''},indent=2),encoding='utf-8')
     (dist/'.nojekyll').touch()
     report={'pages':len(pages),'messages':archive['counts']['messages'],'events':len(messages),'assets':len(media),'days':len(days),'first':archive['first'],'last':archive['last'],'missingAssetReferences':len(set(missing)),'unavailableMediaMessages':sum(bool(m.get('media',{}).get('missing')) and m['media']['kind'] not in {'call','contact'} for m in messages),'mediaPrepared':args.media,'websiteMB':round(sum(p.stat().st_size for p in dist.rglob('*') if p.is_file())/1024**2,2),'mediaGB':round(sum(p.stat().st_size for p in out.rglob('*') if p.is_file())/1024**3,2)}
     (private/'import-report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')

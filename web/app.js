@@ -154,16 +154,46 @@ function createMedia(m){
 }
 const imageObserver=new IntersectionObserver(entries=>{for(const entry of entries){if(entry.isIntersecting){imageObserver.unobserve(entry.target);const image=entry.target,id=image.dataset.asset;resolveAsset(id).then(url=>{if(image.isConnected)image.src=url;}).catch(()=>{if(image.isConnected){image.removeAttribute('src');image.alt=mediaConfig?.provider==='none'?'Медиа ещё не подключены':'Нажми, чтобы открыть медиа';}});}}},{rootMargin:'250px'});
 function observeImage(image,id){image.dataset.asset=id;imageObserver.observe(image);}
+// Google Drive has no addressable paths: each folder is listed once and its names are mapped to file ids.
+const driveListings=new Map();
+const driveIdPattern=/^[A-Za-z0-9_-]{10,200}$/;
+async function driveList(parent,config){
+ const files=new Map();let token='';
+ do{
+  const query=new URLSearchParams({q:"'"+parent+"' in parents and trashed=false",key:config.apiKey,fields:'files(id,name),nextPageToken',pageSize:'1000'});
+  if(token)query.set('pageToken',token);
+  const data=await(await fetchChecked('https://www.googleapis.com/drive/v3/files?'+query,{credentials:'omit'})).json();
+  for(const file of data.files||[])files.set(file.name,file.id);
+  token=data.nextPageToken||'';
+ }while(token);
+ return files;
+}
+function driveChildren(parent,cacheKey,config){
+ if(!driveListings.has(cacheKey))driveListings.set(cacheKey,driveList(parent,config).catch(error=>{driveListings.delete(cacheKey);throw error;}));
+ return driveListings.get(cacheKey);
+}
+async function driveURL(path,config){
+ if(!driveIdPattern.test(config.driveFolderId||'')||!driveIdPattern.test(config.apiKey||''))throw Error('media-config');
+ const slash=path.indexOf('/'),folder=path.slice(0,slash),name=path.slice(slash+1);
+ const parent=(await driveChildren(config.driveFolderId,'',config)).get(folder);
+ if(!parent)throw Error('missing-folder');
+ const id=(await driveChildren(parent,folder,config)).get(name);
+ if(!id)throw Error('missing-part');
+ return 'https://www.googleapis.com/drive/v3/files/'+id+'?alt=media&key='+encodeURIComponent(config.apiKey);
+}
 async function fetchPart(path){
  const config=mediaConfig;if(!config||config.provider==='none')throw Error('no-media');
  let url;
- if(config.provider==='yandex'){
+ if(config.provider==='gdrive'){
+  if(config.proxyUrl){url=new URL(config.proxyUrl);url.searchParams.set('path',path);}else url=await driveURL(path,config);
+ }else if(config.provider==='yandex'){
   const query=new URLSearchParams({public_key:config.yandexPublicUrl,path:'/'+path});
   if(config.proxyUrl){url=new URL(config.proxyUrl);url.searchParams.set('path',path);}else{const response=await fetchChecked('https://cloud-api.yandex.net/v1/disk/public/resources/download?'+query);url=(await response.json()).href;}
  }else if(config.provider==='http'){url=new URL(path,config.baseUrl.endsWith('/')?config.baseUrl:config.baseUrl+'/');}
  else throw Error('unsupported-provider');
  if(!url||!/^https?:/.test(String(url)))throw Error('invalid-media-url');
- return (await fetchChecked(url,{credentials:'omit',referrerPolicy:'no-referrer'})).arrayBuffer();
+ // A Google API key may be restricted by referrer, so that request keeps the origin.
+ return (await fetchChecked(url,{credentials:'omit',referrerPolicy:config.provider==='gdrive'&&!config.proxyUrl?'strict-origin-when-cross-origin':'no-referrer'})).arrayBuffer();
 }
 const inflightMedia=new Map();
 async function resolveAsset(id){

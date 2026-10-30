@@ -1,5 +1,7 @@
 {
   "provider": "none",
+  "driveFolderId": "",
+  "apiKey": "",
   "baseUrl": "",
   "yandexPublicUrl": "",
   "proxyUrl": ""

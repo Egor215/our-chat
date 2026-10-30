@@ -1,22 +1,49 @@
-const CACHE='our-chat-shell-v3';
+const CACHE='our-chat-shell-v4';
 const SHELL=['./','./index.html','./style.css','./telegram-theme.css','./telegram-pattern.svg','./app.js','./search-worker.js','./lottie_light.min.js','./icon.svg','./apple-touch-icon.png','./manifest.webmanifest'];
 let session=null;
 const decryptedParts=new Map();
 self.addEventListener('message',event=>{
  if(event.data?.type==='archive-session'&&session?.sessionId!==event.data.sessionId){session=event.data;decryptedParts.clear();}
- if(event.data?.type==='archive-lock'){session=null;decryptedParts.clear();}
+ if(event.data?.type==='archive-lock'){session=null;decryptedParts.clear();driveListings.clear();}
 });
+const driveListings=new Map();
+const driveIdPattern=/^[A-Za-z0-9_-]{10,200}$/;
+async function driveList(parent,config){
+ const files=new Map();let token='';
+ do{
+  const query=new URLSearchParams({q:"'"+parent+"' in parents and trashed=false",key:config.apiKey,fields:'files(id,name),nextPageToken',pageSize:'1000'});
+  if(token)query.set('pageToken',token);
+  const response=await fetch('https://www.googleapis.com/drive/v3/files?'+query,{credentials:'omit'});if(!response.ok)throw Error('media');
+  const data=await response.json();
+  for(const file of data.files||[])files.set(file.name,file.id);
+  token=data.nextPageToken||'';
+ }while(token);
+ return files;
+}
+function driveChildren(parent,cacheKey,config){
+ if(!driveListings.has(cacheKey))driveListings.set(cacheKey,driveList(parent,config).catch(error=>{driveListings.delete(cacheKey);throw error;}));
+ return driveListings.get(cacheKey);
+}
+async function driveURL(path,config){
+ if(!driveIdPattern.test(config.driveFolderId||'')||!driveIdPattern.test(config.apiKey||''))throw Error('media');
+ const slash=path.indexOf('/'),folder=path.slice(0,slash),name=path.slice(slash+1);
+ const parent=(await driveChildren(config.driveFolderId,'',config)).get(folder);if(!parent)throw Error('media');
+ const id=(await driveChildren(parent,folder,config)).get(name);if(!id)throw Error('media');
+ return 'https://www.googleapis.com/drive/v3/files/'+id+'?alt=media&key='+encodeURIComponent(config.apiKey);
+}
 async function mediaPart(path,active){
  if(session!==active)throw Error('locked');
  if(decryptedParts.has(path))return decryptedParts.get(path);
  const config=active.config;let url;
- if(config.provider==='yandex'){
+ if(config.provider==='gdrive'){
+  if(config.proxyUrl){url=new URL(config.proxyUrl);url.searchParams.set('path',path);}else url=await driveURL(path,config);
+ }else if(config.provider==='yandex'){
   if(config.proxyUrl){url=new URL(config.proxyUrl);url.searchParams.set('path',path);}
   else{const q=new URLSearchParams({public_key:config.yandexPublicUrl,path:'/'+path});const r=await fetch('https://cloud-api.yandex.net/v1/disk/public/resources/download?'+q,{credentials:'omit'});if(!r.ok)throw Error('media');url=(await r.json()).href;}
  }else if(config.provider==='http')url=new URL(path,config.baseUrl.endsWith('/')?config.baseUrl:config.baseUrl+'/');
  else throw Error('no-media');
  if(!url||!/^https?:/.test(String(url)))throw Error('media');
- const r=await fetch(url,{credentials:'omit',referrerPolicy:'no-referrer'});if(!r.ok)throw Error('media');const ciphertext=new Uint8Array(await r.arrayBuffer());const bytes=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:ciphertext.slice(0,12)},active.key,ciphertext.slice(12)));
+ const r=await fetch(url,{credentials:'omit',referrerPolicy:config.provider==='gdrive'&&!config.proxyUrl?'strict-origin-when-cross-origin':'no-referrer'});if(!r.ok)throw Error('media');const ciphertext=new Uint8Array(await r.arrayBuffer());const bytes=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:ciphertext.slice(0,12)},active.key,ciphertext.slice(12)));
  if(session!==active)throw Error('locked');decryptedParts.set(path,bytes);if(decryptedParts.size>4)decryptedParts.delete(decryptedParts.keys().next().value);return bytes;
 }
 async function streamMedia(request,id){
