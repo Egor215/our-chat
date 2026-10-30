@@ -1,8 +1,8 @@
 {
-  "provider": "none",
-  "driveFolderId": "",
-  "apiKey": "",
+  "provider": "gdrive",
+  "driveFolderId": "1arwQkNl-LQ-7a9LbhU05pjj-J0A6UsWW",
+  "apiKey": "AIzaSyC1UfZ-_iO2ZhuhYPH0Vn5_-Ft3WuLWuxQ",
   "baseUrl": "",
-  "yandexPublicUrl": "https://disk.yandex.ru/d/-7xkNplDJ3LkvA",
+  "yandexPublicUrl": "",
   "proxyUrl": ""
 }
