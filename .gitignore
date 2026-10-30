@@ -1,0 +1,5 @@
+private/
+media-upload/
+__pycache__/
+.DS_Store
+*.log

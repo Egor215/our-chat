@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Наш чат">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self' blob: https:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<title>Наш чат</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="telegram-theme.css">
+<script defer src="lottie_light.min.js"></script>
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<div id="lock-screen" class="lock-screen">
+ <main class="lock-card">
+  <div class="lock-mark" aria-hidden="true">♡</div>
+  <span class="eyebrow">ТОЛЬКО ДЛЯ НАС</span>
+  <h1>Наш чат</h1>
+  <p>Всё, что мы говорили друг другу.<br>Бережно сохранено в одном месте.</p>
+  <form id="unlock-form">
+   <label for="password">Пароль от архива</label>
+   <div class="password-wrap"><input id="password" type="password" autocomplete="current-password" required placeholder="Введи пароль"><button id="show-password" type="button" aria-label="Показать пароль">◉</button></div>
+   <button id="unlock" class="primary" type="submit">Открыть переписку <span>→</span></button>
+   <p id="unlock-status" role="status" class="form-status"></p>
+  </form>
+  <div class="private-note"><span aria-hidden="true">⌑</span> Архив открывается только с паролем</div>
+ </main>
+ <footer>У каждой истории есть своё место.</footer>
+</div>
+<div id="app" class="app" hidden>
+ <aside class="sidebar">
+  <div class="side-top"><span>Наш чат</span><button class="icon-button settings-trigger" aria-label="Настройки" data-icon="settings"></button></div>
+  <div class="side-subtitle">СОХРАНЁННАЯ ИСТОРИЯ</div>
+  <button class="conversation selected" id="conversation"><span class="avatar">Е</span><span class="conversation-copy"><strong class="contact-name">Егор</strong><span>Вся наша переписка</span></span><span class="tiny-heart">♡</span></button>
+  <div class="side-memory"><span>♡</span><p>Сообщения остаются.<br>И всё, что между строк.</p><small id="side-range"></small></div>
+  <div class="side-bottom"><span class="status-dot"></span> Личный архив <button id="side-lock" class="text-button">Закрыть</button></div>
+ </aside>
+ <main class="chat">
+  <header class="chat-header">
+   <button id="back" class="icon-button mobile-back" aria-label="О чате" data-icon="back"></button>
+   <button id="profile" class="chat-title"><strong class="contact-name">егорка</strong><small>архив переписки</small></button>
+   <div class="header-actions"><button id="search-open" class="icon-button" aria-label="Поиск сообщений" data-icon="search"></button><button id="menu-open" class="avatar small" aria-label="Открыть меню чата">Е</button></div>
+  </header>
+  <div id="search-bar" class="search-bar" hidden><div class="search-field"><span data-icon="search"></span><input id="search-input" type="search" autocomplete="off" placeholder="Поиск в переписке" aria-label="Текст для поиска"><button id="clear-search" aria-label="Очистить поиск">×</button></div><button id="search-close" class="text-button">Отмена</button><div class="search-options"><select id="search-sender" aria-label="Кто отправил сообщение"><option value="all">Все сообщения</option><option value="0">От Егора</option><option value="1">От меня</option></select><button id="search-calendar" class="text-button">По дате</button><span id="search-summary" role="status"></span></div></div>
+  <button id="floating-day" class="floating-day" aria-label="Открыть календарь"></button>
+  <div id="messages" class="messages" tabindex="0" aria-label="История переписки"><div id="timeline" class="timeline"></div></div>
+  <button id="jump-latest" class="jump-latest icon-button" aria-label="К последним сообщениям" data-icon="down"></button>
+  <div id="search-navigation" class="search-navigation" hidden><button id="previous-result" class="icon-button" aria-label="Предыдущее совпадение" data-icon="up"></button><button id="next-result" class="icon-button" aria-label="Следующее совпадение" data-icon="down"></button><span id="search-position"></span><button id="show-results" class="text-button">Результаты</button></div>
+  <footer class="chat-footer"><button id="media-open" class="icon-button" aria-label="Общие медиа" data-icon="clip"></button><button id="footer-search" class="composer-field" aria-label="Поиск по переписке"><span>Поиск по переписке</span><span data-icon="smile"></span></button><button id="calendar-open" class="icon-button" aria-label="Перейти к дате" data-icon="calendar"></button></footer>
+ </main>
+</div>
+<div id="menu" class="menu" hidden><button data-action="search" data-icon="search">Поиск сообщений</button><button data-action="calendar" data-icon="calendar">Перейти к дате</button><button data-action="media" data-icon="grid">Фото, видео и файлы</button><button data-action="settings" data-icon="settings">Настройки</button><button data-action="lock" data-icon="lock">Закрыть архив</button></div>
+<div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+<section id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden><div class="sheet-handle"></div><header><h2 id="sheet-title"></h2><button id="sheet-close" class="icon-button" aria-label="Закрыть" data-icon="close"></button></header><div id="sheet-content" class="sheet-content"></div></section>
+<div id="viewer" class="viewer" role="dialog" aria-modal="true" aria-label="Просмотр медиа" hidden><header><button id="viewer-close" class="icon-button" aria-label="Закрыть просмотр" data-icon="close"></button><span id="viewer-label"></span><button id="viewer-download" class="icon-button" aria-label="Скачать файл" data-icon="download"></button></header><div id="viewer-content"></div></div>
+<div id="toast" class="toast" role="status" hidden></div>
+</body></html>
